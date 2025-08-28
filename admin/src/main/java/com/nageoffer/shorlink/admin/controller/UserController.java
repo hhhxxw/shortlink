@@ -2,6 +2,7 @@ package com.nageoffer.shorlink.admin.controller;
 
 
 import com.nageoffer.shorlink.admin.common.convention.result.Result;
+import com.nageoffer.shorlink.admin.common.enums.UserErrorCodeEnum;
 import com.nageoffer.shorlink.admin.dto.resp.UserRespDTO;
 import com.nageoffer.shorlink.admin.service.UserService;
 import lombok.RequiredArgsConstructor;
@@ -24,7 +25,7 @@ public class UserController {
     public Result<UserRespDTO> getUserByUsername(@PathVariable("username") String username){
         UserRespDTO result = userService.getUserByUsername(username);
         if(result == null){
-            return new Result<UserRespDTO>().setCode("-1").setMessage("用户查询为空");
+            return new Result<UserRespDTO>().setCode(UserErrorCodeEnum.USER_NULL.code()).setMessage(UserErrorCodeEnum.USER_NULL.message());
         }else{
             return new Result<UserRespDTO>().setCode("0").setData(result);
         }
