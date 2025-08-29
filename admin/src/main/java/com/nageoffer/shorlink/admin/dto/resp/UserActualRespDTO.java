@@ -1,7 +1,4 @@
 package com.nageoffer.shorlink.admin.dto.resp;
-
-import com.fasterxml.jackson.databind.annotation.JsonSerialize;
-import com.nageoffer.shorlink.admin.common.serialize.PhoneDesensitizationSerializer;
 import lombok.Data;
 
 /**
@@ -10,7 +7,7 @@ import lombok.Data;
  * @date 2025-08-25 14:15
  */
 @Data
-public class UserRespDTO {
+public class UserActualRespDTO {
     /**
      * id
      */
@@ -28,7 +25,6 @@ public class UserRespDTO {
     /**
      * 手机号码
      */
-    @JsonSerialize(using = PhoneDesensitizationSerializer.class)
     private String phone;
 
     /**

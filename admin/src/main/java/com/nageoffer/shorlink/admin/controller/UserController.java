@@ -1,8 +1,10 @@
 package com.nageoffer.shorlink.admin.controller;
 
 
+import cn.hutool.core.bean.BeanUtil;
 import com.nageoffer.shorlink.admin.common.convention.result.Result;
-import com.nageoffer.shorlink.admin.common.enums.UserErrorCodeEnum;
+import com.nageoffer.shorlink.admin.common.convention.result.Results;
+import com.nageoffer.shorlink.admin.dto.resp.UserActualRespDTO;
 import com.nageoffer.shorlink.admin.dto.resp.UserRespDTO;
 import com.nageoffer.shorlink.admin.service.UserService;
 import lombok.RequiredArgsConstructor;
@@ -23,12 +25,14 @@ public class UserController {
      */
     @GetMapping("/api/shortlink/v1/user/{username}")
     public Result<UserRespDTO> getUserByUsername(@PathVariable("username") String username){
-        UserRespDTO result = userService.getUserByUsername(username);
-        if(result == null){
-            return new Result<UserRespDTO>().setCode(UserErrorCodeEnum.USER_NULL.code()).setMessage(UserErrorCodeEnum.USER_NULL.message());
-        }else{
-            return new Result<UserRespDTO>().setCode("0").setData(result);
-        }
+        return Results.success(userService.getUserByUsername(username));
+    }
 
+    /**
+     * 根据用户名查询用户未脱敏信息
+     */
+    @GetMapping("/api/shortlink/v1/actual/user/{username}")
+    public Result<UserActualRespDTO> getAcutalUserByUsername(@PathVariable("username") String username){
+        return Results.success(BeanUtil.toBean(userService.getUserByUsername(username), UserActualRespDTO.class));
     }
 }
