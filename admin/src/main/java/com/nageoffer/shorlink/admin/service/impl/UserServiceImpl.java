@@ -9,6 +9,7 @@ import com.nageoffer.shorlink.admin.dao.entity.UserDO;
 import com.nageoffer.shorlink.admin.dao.mapper.UserMapper;
 import com.nageoffer.shorlink.admin.dto.resp.UserRespDTO;
 import com.nageoffer.shorlink.admin.service.UserService;
+import org.redisson.api.RBloomFilter;
 import org.springframework.beans.BeanUtils;
 import org.springframework.stereotype.Service;
 
@@ -19,6 +20,12 @@ import org.springframework.stereotype.Service;
 // 标记为Spring的一个Bean
 @Service
 public class UserServiceImpl extends ServiceImpl<UserMapper, UserDO> implements UserService {
+    private final RBloomFilter userRegisterCachePenetrationBloomFilter;
+
+    public UserServiceImpl(RBloomFilter userRegisterCachePenetrationBloomFilter) {
+        this.userRegisterCachePenetrationBloomFilter = userRegisterCachePenetrationBloomFilter;
+    }
+
     /**
      *
      * @param username 用户名
@@ -40,9 +47,6 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, UserDO> implements 
 
     @Override
     public boolean hasUsername(String username) {
-        LambdaQueryWrapper<UserDO> queryWrapper = Wrappers.lambdaQuery(UserDO.class)
-                .eq(UserDO::getUsername, username);
-        UserDO userDO = baseMapper.selectOne(queryWrapper);
-        return userDO != null;
+        return userRegisterCachePenetrationBloomFilter.contains(username);
     }
 }
