@@ -2,6 +2,7 @@ package com.nageoffer.shorlink.admin.service;
 
 import com.baomidou.mybatisplus.extension.service.IService;
 import com.nageoffer.shorlink.admin.dao.entity.UserDO;
+import com.nageoffer.shorlink.admin.dto.req.UserRegisterReqDTO;
 import com.nageoffer.shorlink.admin.dto.resp.UserRespDTO;
 
 /**
@@ -24,4 +25,11 @@ public interface UserService extends IService<UserDO> {
      * @return 用户名存在返回True，否则返回False
      */
     boolean hasUsername(String username);
+
+    /**
+     * 注册用户
+     * @param requestParam 注册用户请求参数
+     */
+    void register(UserRegisterReqDTO requestParam);
+
 }

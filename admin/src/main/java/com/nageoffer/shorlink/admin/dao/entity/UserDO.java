@@ -1,8 +1,6 @@
 package com.nageoffer.shorlink.admin.dao.entity;
 
-import com.baomidou.mybatisplus.annotation.IdType;
-import com.baomidou.mybatisplus.annotation.TableId;
-import com.baomidou.mybatisplus.annotation.TableName;
+import com.baomidou.mybatisplus.annotation.*;
 import lombok.Data;
 
 import java.io.Serializable;
@@ -53,22 +51,27 @@ public class UserDO implements Serializable {
     /**
      * 注销时间戳
      */
+
     private Long deletionTime;
 
     /**
      * 创建时间
      */
+    @TableField(fill = FieldFill.INSERT)
     private Date createTime;
 
     /**
      * 修改时间
      */
+    @TableField(fill = FieldFill.INSERT_UPDATE)
     private Date updateTime;
 
     /**
      * 删除标识 0：未删除 1：已删除
      */
+    @TableField(fill = FieldFill.INSERT)
     private Integer delFlag;
+
 
     public UserDO() {}
 }
