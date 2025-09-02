@@ -4,17 +4,20 @@ import cn.hutool.core.bean.BeanUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
-import com.nageoffer.shorlink.admin.common.enums.UserErrorCodeEnum;
 import com.nageoffer.shorlink.admin.common.convention.exception.ClientException;
+import com.nageoffer.shorlink.admin.common.enums.UserErrorCodeEnum;
 import com.nageoffer.shorlink.admin.dao.entity.UserDO;
 import com.nageoffer.shorlink.admin.dao.mapper.UserMapper;
 import com.nageoffer.shorlink.admin.dto.req.UserRegisterReqDTO;
 import com.nageoffer.shorlink.admin.dto.resp.UserRespDTO;
 import com.nageoffer.shorlink.admin.service.UserService;
 import org.redisson.api.RBloomFilter;
+import org.redisson.api.RLock;
+import org.redisson.api.RedissonClient;
 import org.springframework.beans.BeanUtils;
 import org.springframework.stereotype.Service;
 
+import static com.nageoffer.shorlink.admin.common.constant.RedisCacheConstant.LOCK_USER_REGISTER_KEY;
 import static com.nageoffer.shorlink.admin.common.enums.UserErrorCodeEnum.USER_NAME_EXIST;
 import static com.nageoffer.shorlink.admin.common.enums.UserErrorCodeEnum.USER_SAVE_ERROR;
 
@@ -26,9 +29,10 @@ import static com.nageoffer.shorlink.admin.common.enums.UserErrorCodeEnum.USER_S
 @Service
 public class UserServiceImpl extends ServiceImpl<UserMapper, UserDO> implements UserService {
     private final RBloomFilter userRegisterCachePenetrationBloomFilter;
-
-    public UserServiceImpl(RBloomFilter userRegisterCachePenetrationBloomFilter) {
+    private final RedissonClient redissonClient;
+    public UserServiceImpl(RBloomFilter userRegisterCachePenetrationBloomFilter, RedissonClient redissonClient) {
         this.userRegisterCachePenetrationBloomFilter = userRegisterCachePenetrationBloomFilter;
+        this.redissonClient = redissonClient;
     }
 
     /**
@@ -59,11 +63,24 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, UserDO> implements 
         if(hasUsername(requestParam.getUsername())){
             throw new ClientException(USER_NAME_EXIST);
         }
-        int inserted = baseMapper.insert(BeanUtil.toBean(requestParam, UserDO.class));
-        if(inserted < 1){
-            throw new ClientException(USER_SAVE_ERROR);
+        RLock lock = redissonClient.getLock(LOCK_USER_REGISTER_KEY + requestParam.getUsername());
+        try {
+            if(lock.tryLock()){
+                int inserted = baseMapper.insert(BeanUtil.toBean(requestParam, UserDO.class));
+                if(inserted < 1){
+                    throw new ClientException(USER_SAVE_ERROR);
+                }
+
+                // 2. 注册成功后，将新用户名添加到布隆过滤器中
+                userRegisterCachePenetrationBloomFilter.add(requestParam.getUsername());
+                return;
+            }
+            throw new ClientException(USER_NAME_EXIST);
+        }finally {
+            lock.unlock();
         }
-        // 2. 注册成功后，将新用户名添加到布隆过滤器中
-        userRegisterCachePenetrationBloomFilter.add(requestParam.getUsername());
+
+
+
     }
 }
