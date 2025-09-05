@@ -5,6 +5,7 @@ import cn.hutool.core.bean.BeanUtil;
 import com.nageoffer.shorlink.admin.common.convention.result.Result;
 import com.nageoffer.shorlink.admin.common.convention.result.Results;
 import com.nageoffer.shorlink.admin.dto.req.UserRegisterReqDTO;
+import com.nageoffer.shorlink.admin.dto.req.UserUpdateReqDTO;
 import com.nageoffer.shorlink.admin.dto.resp.UserActualRespDTO;
 import com.nageoffer.shorlink.admin.dto.resp.UserRespDTO;
 import com.nageoffer.shorlink.admin.service.UserService;
@@ -52,6 +53,18 @@ public class UserController {
     @PostMapping("/api/short-link/v1/user")
     public Result<Void> register(@RequestBody UserRegisterReqDTO requestParam){
         userService.register(requestParam);
+        return Results.success();
+    }
+
+    /**
+     * 修改用户
+     * @param requestParam
+     * @return
+     */
+
+    @PutMapping("/api/short-link/v1/user")
+    public Result<Void> update(@RequestBody UserUpdateReqDTO requestParam){
+        userService.update(requestParam);
         return Results.success();
     }
 }
