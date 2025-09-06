@@ -2,8 +2,10 @@ package com.nageoffer.shorlink.admin.service;
 
 import com.baomidou.mybatisplus.extension.service.IService;
 import com.nageoffer.shorlink.admin.dao.entity.UserDO;
+import com.nageoffer.shorlink.admin.dto.req.UserLoginReqDTO;
 import com.nageoffer.shorlink.admin.dto.req.UserRegisterReqDTO;
 import com.nageoffer.shorlink.admin.dto.req.UserUpdateReqDTO;
+import com.nageoffer.shorlink.admin.dto.resp.UserLoginRespDTO;
 import com.nageoffer.shorlink.admin.dto.resp.UserRespDTO;
 
 /**
@@ -39,4 +41,17 @@ public interface UserService extends IService<UserDO> {
      */
     void update( UserUpdateReqDTO requestParam);
 
+    /**
+     * 用户登陆
+     * @param requestParam 用户登陆请求参数
+     * @return
+     */
+    UserLoginRespDTO login(UserLoginReqDTO requestParam);
+
+    /**
+     * 检查用户是否登陆
+     * @param token 用户登陆token
+     * @return
+     */
+    Boolean checkLogin(String username, String token);
 }
