@@ -9,4 +9,9 @@ import com.nageoffer.shorlink.admin.dao.entity.GroupDO;
  * @date 2025-09-09 09:01
  */
 public interface GroupService extends IService<GroupDO> {
+    /**
+     * 新增短链接分组
+     * @param groupName
+     */
+    void saveGroup(String groupName);
 }
