@@ -1,12 +1,14 @@
 package com.nageoffer.shorlink.admin.common.biz.user;
 
 import com.alibaba.fastjson.JSON;
+import com.google.common.collect.Lists;
 import jakarta.servlet.*;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.redis.core.StringRedisTemplate;
 
 import java.io.IOException;
+import java.util.List;
 
 /**
  * 用户信息传输过滤器
@@ -16,6 +18,11 @@ import java.io.IOException;
 public class UserTransmitFilter implements Filter {
 
     private final StringRedisTemplate stringRedisTemplate;
+    private static final List<String> IGNORE_URI = Lists.newArrayList(
+            "/api/short-link/admin/v1/user/login",
+            "/api/short-link/admin/v1/user/has-username"
+
+    );
     @Override
     public void doFilter(ServletRequest servletRequest, ServletResponse servletResponse, FilterChain filterChain) throws IOException, ServletException {
         HttpServletRequest httpServletRequest = (HttpServletRequest) servletRequest;
