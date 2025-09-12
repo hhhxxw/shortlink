@@ -2,11 +2,13 @@ package com.nageoffer.shorlink.admin.service.impl;
 
 import cn.hutool.core.bean.BeanUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.nageoffer.shorlink.admin.common.biz.user.UserContext;
 import com.nageoffer.shorlink.admin.dao.entity.GroupDO;
 import com.nageoffer.shorlink.admin.dao.mapper.GroupMapper;
+import com.nageoffer.shorlink.admin.dto.req.ShortLinkGroupUpdateReqDTO;
 import com.nageoffer.shorlink.admin.dto.resp.ShortLinkGroupRespDTO;
 import com.nageoffer.shorlink.admin.service.GroupService;
 import com.nageoffer.shorlink.admin.toolkit.RandomUtil;
@@ -17,6 +19,7 @@ import java.util.List;
 
 /**
  * 短链接分组接口实现层
+ *
  * @author 一只咸鱼的大厂梦-hxw
  * @date 2025-09-09 09:03
  */
@@ -24,12 +27,13 @@ import java.util.List;
 @Service
 public class GroupServiceImpl extends ServiceImpl<GroupMapper, GroupDO> implements GroupService {
 
+
     @Override
     public void saveGroup(String groupName) {
         String gid;
-        while(true){
+        while (true) {
             gid = RandomUtil.generateRandom(6);
-            if(! hasGid(gid)){
+            if (!hasGid(gid)) {
                 break;
             }
         }
@@ -52,11 +56,24 @@ public class GroupServiceImpl extends ServiceImpl<GroupMapper, GroupDO> implemen
         return BeanUtil.copyToList(groupDoList, ShortLinkGroupRespDTO.class);
     }
 
-    private boolean hasGid(String gid){
+    @Override
+    public void updateGroup(ShortLinkGroupUpdateReqDTO requestParam) {
+        LambdaUpdateWrapper<GroupDO> updateWrapper = Wrappers.lambdaUpdate(GroupDO.class)
+                .eq(GroupDO::getUsername, UserContext.getUsername())
+                .eq(GroupDO::getGid, requestParam.getGid())
+                .eq(GroupDO::getName, requestParam.getName())
+                .eq(GroupDO::getDelFlag, 0);
+        GroupDO groupDO = new GroupDO();
+        groupDO.setName(requestParam.getName());
+        baseMapper.update(groupDO, updateWrapper);
+    }
+
+    private boolean hasGid(String gid) {
         LambdaQueryWrapper<GroupDO> queryWrapper = Wrappers.lambdaQuery(GroupDO.class)
                 .eq(GroupDO::getId, gid)
                 .eq(GroupDO::getUsername, UserContext.getUsername());
         GroupDO hasGroupFlag = baseMapper.selectOne(queryWrapper);
         return hasGroupFlag != null;
     }
+
 }
