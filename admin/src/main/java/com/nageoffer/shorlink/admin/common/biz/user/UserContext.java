@@ -9,6 +9,7 @@ import java.util.Optional;
  */
 public final class UserContext {
 
+
     private static final ThreadLocal<UserInfoDTO> USER_THREAD_LOCAL = new TransmittableThreadLocal<>();
 
     /**
