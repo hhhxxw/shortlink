@@ -130,6 +130,8 @@ private String generateSuffix(ShortLinkCreateReqDTO requestParam){
 
 ![img_3.png](图片/img_3.png)
 
+对数据库t_link进行分库分表
+
 # 学习收获
 完成后台管理的搭建，从0到1开发了后台管理系统，锻炼自己常用接口的编写能力，学习作者的开发架构，逐渐规范开发。
 
