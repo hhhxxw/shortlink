@@ -1,30 +1,20 @@
-package com.nageoffer.shorlink.project.dao.entity;
+package com.nageoffer.shorlink.project.dto.resp;
 
 import com.baomidou.mybatisplus.annotation.TableField;
-import com.baomidou.mybatisplus.annotation.TableName;
-import com.nageoffer.shorlink.project.common.database.BaseDO;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
 import lombok.Data;
-import lombok.NoArgsConstructor;
 
 import java.util.Date;
 
 /**
  * <p>
- * 功能描述: 数据库t_link的实体类
+ * 功能描述: 短链接返回参数
  * </p>
  *
  * @author Hanxuewei
- * @since 2025/9/19
+ * @since 2025/9/27
  */
 @Data
-@Builder
-@TableName("t_link")
-@NoArgsConstructor
-@AllArgsConstructor
-public class ShortLinkDO extends BaseDO {
-
+public class ShortLinkPageRespDTO {
     /**
      * ID
      */
@@ -61,16 +51,6 @@ public class ShortLinkDO extends BaseDO {
     private String gid;
 
     /**
-     * 启用标识 0：未启用 1：已启用
-     */
-    private Integer enableStatus;
-
-    /**
-     * 创建类型 0：控制台 1：接口
-     */
-    private Integer createdType;
-
-    /**
      * 有效期类型 0：永久有效 1：用户自定义
      */
     private Integer validDateType;
@@ -90,5 +70,4 @@ public class ShortLinkDO extends BaseDO {
      * 网站标识
      */
     private String favicon;
-
 }

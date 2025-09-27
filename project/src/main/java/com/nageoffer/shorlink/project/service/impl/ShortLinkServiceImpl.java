@@ -1,14 +1,18 @@
 package com.nageoffer.shorlink.project.service.impl;
 
+import cn.hutool.core.bean.BeanUtil;
 import cn.hutool.core.text.StrBuilder;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.nageoffer.shorlink.project.common.convention.exception.ServiceException;
 import com.nageoffer.shorlink.project.dao.entity.ShortLinkDO;
 import com.nageoffer.shorlink.project.dao.mapper.ShortLinkMapper;
 import com.nageoffer.shorlink.project.dto.req.ShortLinkCreateReqDTO;
+import com.nageoffer.shorlink.project.dto.req.ShortLinkPageReqDTO;
 import com.nageoffer.shorlink.project.dto.resp.ShortLinkCreateRespDTO;
+import com.nageoffer.shorlink.project.dto.resp.ShortLinkPageRespDTO;
 import com.nageoffer.shorlink.project.service.ShortLinkService;
 import com.nageoffer.shorlink.project.toolkit.HashUtil;
 import lombok.AllArgsConstructor;
@@ -75,6 +79,17 @@ public class ShortLinkServiceImpl extends ServiceImpl<ShortLinkMapper, ShortLink
                 .originUrl(requestParam.getOriginUrl())
                 .gid(requestParam.getGid())
                 .build();
+    }
+
+    @Override
+    public IPage<ShortLinkPageRespDTO> pageShortLink(ShortLinkPageReqDTO requestParam) {
+        LambdaQueryWrapper<ShortLinkDO> queryWrapper = Wrappers.lambdaQuery(ShortLinkDO.class)
+                .eq(ShortLinkDO::getGid, requestParam.getGid())
+                .eq(ShortLinkDO::getEnableStatus, 0)
+                .eq(ShortLinkDO::getDelFlag, 0)
+                .orderByDesc(ShortLinkDO::getCreateTime);
+        IPage<ShortLinkDO> resultPage = baseMapper.selectPage(requestParam, queryWrapper);
+        return resultPage.convert(each -> BeanUtil.toBean(each, ShortLinkPageRespDTO.class));
     }
 
     /**
