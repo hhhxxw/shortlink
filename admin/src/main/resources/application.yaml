@@ -12,3 +12,7 @@ spring:
       host: 127.0.0.1
       port: 6379
 
+# 短链接中台服务地址配置
+short-link:
+  project:
+    url: http://127.0.0.1:8001
