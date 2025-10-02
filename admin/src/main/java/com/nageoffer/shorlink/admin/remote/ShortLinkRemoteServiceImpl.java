@@ -1,11 +1,13 @@
-package com.nageoffer.shorlink.admin.remote.dto;
+package com.nageoffer.shorlink.admin.remote;
 
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.TypeReference;
 import com.nageoffer.shorlink.admin.common.convention.result.Result;
 import com.nageoffer.shorlink.admin.remote.dto.req.ShortLinkCreateReqDTO;
+import com.nageoffer.shorlink.admin.remote.dto.req.ShortLinkGroupCountReqDTO;
 import com.nageoffer.shorlink.admin.remote.dto.req.ShortLinkPageReqDTO;
 import com.nageoffer.shorlink.admin.remote.dto.resp.ShortLinkCreateRespDTO;
+import com.nageoffer.shorlink.admin.remote.dto.resp.ShortLinkGroupCountRespDTO;
 import com.nageoffer.shorlink.admin.remote.dto.resp.ShortLinkPageResult;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -17,6 +19,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -86,6 +89,27 @@ public class ShortLinkRemoteServiceImpl implements ShortLinkRemoteService {
         } catch (Exception e) {
             log.error("远程调用分页查询短链接失败", e);
             throw new RuntimeException("远程调用分页查询短链接失败: " + e.getMessage());
+        }
+    }
+
+    @Override
+    public Result<List<ShortLinkGroupCountRespDTO>> countByGidList(List<String> gidList) {
+        String url = projectServiceUrl + "/api/short-link/v1/count";
+        
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        
+        ShortLinkGroupCountReqDTO requestParam = ShortLinkGroupCountReqDTO.builder()
+                .gidList(gidList)
+                .build();
+        HttpEntity<ShortLinkGroupCountReqDTO> entity = new HttpEntity<>(requestParam, headers);
+        
+        try {
+            String response = restTemplate.postForObject(url, entity, String.class);
+            return JSON.parseObject(response, new TypeReference<Result<List<ShortLinkGroupCountRespDTO>>>() {});
+        } catch (Exception e) {
+            log.error("远程调用批量查询分组短链接数量失败", e);
+            throw new RuntimeException("远程调用批量查询分组短链接数量失败: " + e.getMessage());
         }
     }
 } 

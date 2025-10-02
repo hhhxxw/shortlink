@@ -1,10 +1,13 @@
-package com.nageoffer.shorlink.admin.remote.dto;
+package com.nageoffer.shorlink.admin.remote;
 
 import com.nageoffer.shorlink.admin.common.convention.result.Result;
 import com.nageoffer.shorlink.admin.remote.dto.req.ShortLinkCreateReqDTO;
 import com.nageoffer.shorlink.admin.remote.dto.req.ShortLinkPageReqDTO;
 import com.nageoffer.shorlink.admin.remote.dto.resp.ShortLinkCreateRespDTO;
+import com.nageoffer.shorlink.admin.remote.dto.resp.ShortLinkGroupCountRespDTO;
 import com.nageoffer.shorlink.admin.remote.dto.resp.ShortLinkPageResult;
+
+import java.util.List;
 
 /**
  * <p>
@@ -25,4 +28,9 @@ public interface ShortLinkRemoteService {
      * 分页查询短链接
      */
     Result<ShortLinkPageResult> pageShortLink(ShortLinkPageReqDTO requestParam);
+
+    /**
+     * 批量查询分组短链接数量
+     */
+    Result<List<ShortLinkGroupCountRespDTO>> countByGidList(List<String> gidList);
 }
