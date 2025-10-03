@@ -7,6 +7,8 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.nageoffer.shorlink.admin.common.biz.user.UserContext;
+import com.nageoffer.shorlink.admin.common.biz.user.UserInfoDTO;
 import com.nageoffer.shorlink.admin.common.convention.exception.ClientException;
 import com.nageoffer.shorlink.admin.common.enums.UserErrorCodeEnum;
 import com.nageoffer.shorlink.admin.dao.entity.UserDO;
@@ -19,6 +21,7 @@ import com.nageoffer.shorlink.admin.dto.resp.UserRespDTO;
 import com.nageoffer.shorlink.admin.service.GroupService;
 import com.nageoffer.shorlink.admin.service.UserService;
 import lombok.AllArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.redisson.api.RBloomFilter;
 import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
@@ -42,6 +45,7 @@ import static com.nageoffer.shorlink.admin.common.enums.UserErrorCodeEnum.USER_E
  */
 // 标记为Spring的一个Bean
 @Service
+@Slf4j
 @AllArgsConstructor
 public class UserServiceImpl extends ServiceImpl<UserMapper, UserDO> implements UserService {
     private final RBloomFilter userRegisterCachePenetrationBloomFilter;
@@ -50,7 +54,6 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, UserDO> implements 
     private final GroupService groupService;
 
     /**
-     *
      * @param username 用户名
      * @return
      */
@@ -60,13 +63,14 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, UserDO> implements 
                 .eq(UserDO::getUsername, username);
         UserDO userDO = baseMapper.selectOne(queryWrapper);
         // 添加空值检查
-        if(userDO == null){
+        if (userDO == null) {
             throw new ClientException(UserErrorCodeEnum.USER_NULL);
         }
         UserRespDTO result = new UserRespDTO();
         BeanUtils.copyProperties(userDO, result);
         return result;
     }
+
     // 布隆过滤器
     @Override
     public boolean hasUsername(String username) {
@@ -77,34 +81,51 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, UserDO> implements 
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void register(UserRegisterReqDTO requestParam) {
+        String username = requestParam.getUsername();
+        log.info("用户注册开始, username{}", username);
         // 布隆过滤器
-        if(hasUsername(requestParam.getUsername())){
+        if (hasUsername(requestParam.getUsername())) {
+            log.warn("用户名已经存在（布隆过滤器）， username{}", username);
             throw new ClientException(USER_NAME_EXIST);
         }
 
         // 分布式锁
         RLock lock = redissonClient.getLock(LOCK_USER_REGISTER_KEY + requestParam.getUsername());
-        if(!lock.tryLock()){
+        if (!lock.tryLock()) {
+            log.warn("获取分布式锁失败，username: {}", username);
             throw new ClientException(USER_NAME_EXIST);
         }
+
+        // 数据库唯一索引
         try {
-            // 数据库唯一索引
+            int inserted = baseMapper.insert(BeanUtil.toBean(requestParam, UserDO.class));
+            // 插入行数检测
+            if (inserted < 1) {
+                log.warn("用户插入失败，insert:{}, username:{}", inserted, username);
+                throw new ClientException(USER_SAVE_ERROR);
+            }
+            UserInfoDTO userInfo = UserInfoDTO.builder()
+                    .username(username)
+                    .realName(requestParam.getRealName())
+                    .build();
+            UserContext.setUser(userInfo);
+
             try {
-                int inserted = baseMapper.insert(BeanUtil.toBean(requestParam, UserDO.class));
-                // 插入行数检测
-                if(inserted < 1){
-                    throw new ClientException(USER_SAVE_ERROR);
-                }
-            } catch(DuplicateKeyException ex) {
-                throw new ClientException(USER_EXIST);
+                groupService.saveGroup("默认分组");
+            } finally {
+                UserContext.removeUser();
             }
             // 注册成功后,将新用户名添加到布隆过滤器中
             userRegisterCachePenetrationBloomFilter.add(requestParam.getUsername());
-            groupService.saveGroup("默认分组");
+            log.info("用户注册成功， username: {}", username);
+        } catch (DuplicateKeyException ex) {
+            log.warn("数据库唯一键冲突， username", username);
+            throw new ClientException(USER_EXIST);
+        } catch (Exception e) {
+            log.warn("用户注册异常， username {}", username, e);
         } finally {
             lock.unlock();
         }
-
     }
 
     @Override
@@ -118,15 +139,15 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, UserDO> implements 
     @Override
     public UserLoginRespDTO login(UserLoginReqDTO requestParam) {
         LambdaQueryWrapper<UserDO> queryWrapper = Wrappers.lambdaQuery(UserDO.class)
-                        .eq(UserDO::getUsername, requestParam.getUsername())
-                                .eq(UserDO::getPassword, requestParam.getPassword())
-                                        .eq(UserDO::getDelFlag, 0);
+                .eq(UserDO::getUsername, requestParam.getUsername())
+                .eq(UserDO::getPassword, requestParam.getPassword())
+                .eq(UserDO::getDelFlag, 0);
         UserDO userDO = baseMapper.selectOne(queryWrapper);
-        if(userDO == null){
+        if (userDO == null) {
             throw new ClientException("用户不存在");
         }
         Boolean hasLogin = stringRedisTemplate.hasKey("login_" + requestParam.getUsername());
-        if(hasLogin != null && hasLogin){
+        if (hasLogin != null && hasLogin) {
             throw new ClientException("用户已登陆");
         }
         /**
@@ -151,7 +172,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, UserDO> implements 
     @Override
     public void logout(String username, String token) {
         // 先验证是否登陆
-        if(checkLogin(username, token)){
+        if (checkLogin(username, token)) {
             stringRedisTemplate.delete("login_" + username);
             return;
         }
