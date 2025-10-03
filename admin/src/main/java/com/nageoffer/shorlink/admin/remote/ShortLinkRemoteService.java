@@ -2,6 +2,7 @@ package com.nageoffer.shorlink.admin.remote;
 
 import com.nageoffer.shorlink.admin.common.convention.result.Result;
 import com.nageoffer.shorlink.admin.remote.dto.req.ShortLinkCreateReqDTO;
+import com.nageoffer.shorlink.admin.remote.dto.req.ShortLinkGroupCountReqDTO;
 import com.nageoffer.shorlink.admin.remote.dto.req.ShortLinkPageReqDTO;
 import com.nageoffer.shorlink.admin.remote.dto.resp.ShortLinkCreateRespDTO;
 import com.nageoffer.shorlink.admin.remote.dto.resp.ShortLinkGroupCountRespDTO;
@@ -31,6 +32,8 @@ public interface ShortLinkRemoteService {
 
     /**
      * 批量查询分组短链接数量
+     * @param requestParam 查询参数
+     * @return 分组短链接数量列表
      */
-    Result<List<ShortLinkGroupCountRespDTO>> countByGidList(List<String> gidList);
+    Result<List<ShortLinkGroupCountRespDTO>> countByGidList(ShortLinkGroupCountReqDTO requestParam);
 }

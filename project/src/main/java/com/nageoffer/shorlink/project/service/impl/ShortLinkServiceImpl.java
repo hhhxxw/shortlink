@@ -12,6 +12,7 @@ import com.nageoffer.shorlink.project.dao.mapper.ShortLinkMapper;
 import com.nageoffer.shorlink.project.dto.req.ShortLinkCreateReqDTO;
 import com.nageoffer.shorlink.project.dto.req.ShortLinkPageReqDTO;
 import com.nageoffer.shorlink.project.dto.resp.ShortLinkCreateRespDTO;
+import com.nageoffer.shorlink.project.dto.resp.ShortLinkGroupCountRespDTO;
 import com.nageoffer.shorlink.project.dto.resp.ShortLinkPageRespDTO;
 import com.nageoffer.shorlink.project.service.ShortLinkService;
 import com.nageoffer.shorlink.project.toolkit.HashUtil;
@@ -20,6 +21,10 @@ import lombok.extern.slf4j.Slf4j;
 import org.redisson.api.RBloomFilter;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
+
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * <p>
@@ -93,8 +98,37 @@ public class ShortLinkServiceImpl extends ServiceImpl<ShortLinkMapper, ShortLink
         return resultPage.convert(each -> BeanUtil.toBean(each, ShortLinkPageRespDTO.class));
     }
 
+    @Override
+    public List<ShortLinkGroupCountRespDTO> countByGidList(List<String> gidList) {
+        // 输出参数
+        log.info("接受到的批量查询请求, gidList: {}", gidList);
+
+        LambdaQueryWrapper<ShortLinkDO> queryWrapper = Wrappers.lambdaQuery(ShortLinkDO.class)
+                .select(ShortLinkDO::getGid)
+                .in(ShortLinkDO::getGid, gidList)
+                .eq(ShortLinkDO::getEnableStatus, 1)
+                .eq(ShortLinkDO::getDelFlag, 0);
+        
+        List<ShortLinkDO> shortLinkDOList = baseMapper.selectList(queryWrapper);
+        log.info("查询到的短链接数量：{}", shortLinkDOList.size());
+        log.info("短链接列表: {}", shortLinkDOList);
+        // 按 gid 分组统计数量
+        Map<String, Long> gidCountMap = shortLinkDOList.stream()
+                .collect(Collectors.groupingBy(ShortLinkDO::getGid, Collectors.counting()));
+        log.info("分组统计结果: {}", gidCountMap);
+        // 转换为响应DTO，确保所有gid都有返回值（即使数量为0）
+        List<ShortLinkGroupCountRespDTO> result = gidList.stream()
+                .map(gid -> ShortLinkGroupCountRespDTO.builder()
+                        .gid(gid)
+                        .shortLinkCount(gidCountMap.getOrDefault(gid, 0L).intValue())
+                        .build())
+                .collect(Collectors.toList());
+        log.info("最终返回结果: {}", result);
+        return result;
+    }
+
     /**
-     * 生成给短链接
+     * 生成短链接
      * @param requestParam 请求参数
      * @return 返回短链接
      */

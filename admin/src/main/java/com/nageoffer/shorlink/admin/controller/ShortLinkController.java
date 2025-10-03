@@ -1,7 +1,7 @@
 package com.nageoffer.shorlink.admin.controller;
 
 import com.nageoffer.shorlink.admin.common.convention.result.Result;
-import com.nageoffer.shorlink.admin.remote.dto.ShortLinkRemoteService;
+import com.nageoffer.shorlink.admin.remote.ShortLinkRemoteService;
 import com.nageoffer.shorlink.admin.remote.dto.req.ShortLinkCreateReqDTO;
 import com.nageoffer.shorlink.admin.remote.dto.req.ShortLinkPageReqDTO;
 import com.nageoffer.shorlink.admin.remote.dto.resp.ShortLinkCreateRespDTO;

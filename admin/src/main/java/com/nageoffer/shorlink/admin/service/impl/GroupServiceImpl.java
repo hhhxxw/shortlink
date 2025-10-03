@@ -6,18 +6,25 @@ import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.nageoffer.shorlink.admin.common.biz.user.UserContext;
+import com.nageoffer.shorlink.admin.common.convention.result.Result;
 import com.nageoffer.shorlink.admin.dao.entity.GroupDO;
 import com.nageoffer.shorlink.admin.dao.mapper.GroupMapper;
+import com.nageoffer.shorlink.admin.dao.mapper.UserMapper;
 import com.nageoffer.shorlink.admin.dto.req.ShortLinkGroupSortReqDTO;
 import com.nageoffer.shorlink.admin.dto.req.ShortLinkGroupUpdateReqDTO;
 import com.nageoffer.shorlink.admin.dto.resp.ShortLinkGroupRespDTO;
+import com.nageoffer.shorlink.admin.remote.ShortLinkRemoteService;
+import com.nageoffer.shorlink.admin.remote.dto.req.ShortLinkGroupCountReqDTO;
+import com.nageoffer.shorlink.admin.remote.dto.resp.ShortLinkGroupCountRespDTO;
 import com.nageoffer.shorlink.admin.service.GroupService;
 import com.nageoffer.shorlink.admin.toolkit.RandomUtil;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.stream.Collectors;
 
 /**
  * 短链接分组接口实现层
@@ -27,7 +34,13 @@ import java.util.List;
  */
 @Slf4j
 @Service
+@RequiredArgsConstructor
 public class GroupServiceImpl extends ServiceImpl<GroupMapper, GroupDO> implements GroupService {
+    /**
+     * 后续重构为SpringCloud Feign调用
+     */
+    private final ShortLinkRemoteService shortLinkRemoteService;
+    private final UserMapper userMapper;
 
 
     @Override
@@ -50,12 +63,45 @@ public class GroupServiceImpl extends ServiceImpl<GroupMapper, GroupDO> implemen
 
     @Override
     public List<ShortLinkGroupRespDTO> listGroup() {
+        // 第1步：查询当前用户的所有分组
         LambdaQueryWrapper<GroupDO> queryWrapper = Wrappers.lambdaQuery(GroupDO.class)
                 .eq(GroupDO::getDelFlag, 0)
                 .eq(GroupDO::getUsername, UserContext.getUsername())
                 .orderByDesc(GroupDO::getSortOrder, GroupDO::getUpdateTime);
         List<GroupDO> groupDoList = baseMapper.selectList(queryWrapper);
-        return BeanUtil.copyToList(groupDoList, ShortLinkGroupRespDTO.class);
+
+        // 提取 gid 列表
+        List<String> gidList = groupDoList.stream()
+                .map(GroupDO::getGid)
+                .collect(Collectors.toList());
+        log.info("查询到的分组gid列表: {}", gidList);
+
+
+        // ===== 第2步：构造请求 DTO 并远程调用 =====
+        ShortLinkGroupCountReqDTO countReqDTO = ShortLinkGroupCountReqDTO.builder()
+                .gidList(groupDoList.stream().map(GroupDO::getGid).collect(Collectors.toList()))
+                .build();
+        log.info("准备远程调用， 请求参数: {}", countReqDTO);
+
+        Result<List<ShortLinkGroupCountRespDTO>> listResult = shortLinkRemoteService.countByGidList(countReqDTO);
+        log.info("远程调用返回结果：{}", listResult);
+        log.info("远程调用返回的数据：{}", listResult.getData());
+        // ===== 第3步：DO 转 DTO =====
+        List<ShortLinkGroupRespDTO> shortLinkGroupRespDTOList =
+                BeanUtil.copyToList(groupDoList, ShortLinkGroupRespDTO.class);
+
+        // ===== 第4步：填充短链接数量到每个分组 =====
+        shortLinkGroupRespDTOList.forEach(each -> {
+            listResult.getData().stream()
+                    .filter(item -> item.getGid().equals(each.getGid()))
+                    .findFirst()
+                    .ifPresent(item -> {
+                        log.info("为分组{}设置短链接数量：{}", each.getGid(), item.getShortLinkCount());
+                        each.setShortLinkCount(item.getShortLinkCount());
+                    });
+        });
+
+        return shortLinkGroupRespDTOList;
     }
 
     @Override

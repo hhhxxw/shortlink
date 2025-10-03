@@ -93,15 +93,12 @@ public class ShortLinkRemoteServiceImpl implements ShortLinkRemoteService {
     }
 
     @Override
-    public Result<List<ShortLinkGroupCountRespDTO>> countByGidList(List<String> gidList) {
+    public Result<List<ShortLinkGroupCountRespDTO>> countByGidList(ShortLinkGroupCountReqDTO requestParam) {
         String url = projectServiceUrl + "/api/short-link/v1/count";
         
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
         
-        ShortLinkGroupCountReqDTO requestParam = ShortLinkGroupCountReqDTO.builder()
-                .gidList(gidList)
-                .build();
         HttpEntity<ShortLinkGroupCountReqDTO> entity = new HttpEntity<>(requestParam, headers);
         
         try {
