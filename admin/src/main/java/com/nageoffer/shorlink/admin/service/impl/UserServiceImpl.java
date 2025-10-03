@@ -1,6 +1,7 @@
 package com.nageoffer.shorlink.admin.service.impl;
 
 import cn.hutool.core.bean.BeanUtil;
+
 import com.alibaba.fastjson.JSON;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
@@ -15,6 +16,7 @@ import com.nageoffer.shorlink.admin.dto.req.UserRegisterReqDTO;
 import com.nageoffer.shorlink.admin.dto.req.UserUpdateReqDTO;
 import com.nageoffer.shorlink.admin.dto.resp.UserLoginRespDTO;
 import com.nageoffer.shorlink.admin.dto.resp.UserRespDTO;
+import com.nageoffer.shorlink.admin.service.GroupService;
 import com.nageoffer.shorlink.admin.service.UserService;
 import lombok.AllArgsConstructor;
 import org.redisson.api.RBloomFilter;
@@ -24,6 +26,7 @@ import org.springframework.beans.BeanUtils;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
@@ -44,6 +47,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, UserDO> implements 
     private final RBloomFilter userRegisterCachePenetrationBloomFilter;
     private final RedissonClient redissonClient;
     private final StringRedisTemplate stringRedisTemplate;
+    private final GroupService groupService;
 
     /**
      *
@@ -63,23 +67,31 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, UserDO> implements 
         BeanUtils.copyProperties(userDO, result);
         return result;
     }
+    // 布隆过滤器
     @Override
     public boolean hasUsername(String username) {
         return userRegisterCachePenetrationBloomFilter.contains(username);
     }
 
+
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public void register(UserRegisterReqDTO requestParam) {
+        // 布隆过滤器
         if(hasUsername(requestParam.getUsername())){
             throw new ClientException(USER_NAME_EXIST);
         }
+
+        // 分布式锁
         RLock lock = redissonClient.getLock(LOCK_USER_REGISTER_KEY + requestParam.getUsername());
         if(!lock.tryLock()){
             throw new ClientException(USER_NAME_EXIST);
         }
         try {
+            // 数据库唯一索引
             try {
                 int inserted = baseMapper.insert(BeanUtil.toBean(requestParam, UserDO.class));
+                // 插入行数检测
                 if(inserted < 1){
                     throw new ClientException(USER_SAVE_ERROR);
                 }
@@ -88,9 +100,11 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, UserDO> implements 
             }
             // 注册成功后,将新用户名添加到布隆过滤器中
             userRegisterCachePenetrationBloomFilter.add(requestParam.getUsername());
+            groupService.saveGroup("默认分组");
         } finally {
             lock.unlock();
         }
+
     }
 
     @Override
