@@ -6,15 +6,13 @@ import com.nageoffer.shorlink.project.common.convention.result.Results;
 import com.nageoffer.shorlink.project.dto.req.ShortLinkCreateReqDTO;
 import com.nageoffer.shorlink.project.dto.req.ShortLinkGroupCountReqDTO;
 import com.nageoffer.shorlink.project.dto.req.ShortLinkPageReqDTO;
+import com.nageoffer.shorlink.project.dto.req.ShortLinkUpdateReqDTO;
 import com.nageoffer.shorlink.project.dto.resp.ShortLinkCreateRespDTO;
 import com.nageoffer.shorlink.project.dto.resp.ShortLinkGroupCountRespDTO;
 import com.nageoffer.shorlink.project.dto.resp.ShortLinkPageRespDTO;
 import com.nageoffer.shorlink.project.service.ShortLinkService;
 import lombok.RequiredArgsConstructor;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
@@ -37,6 +35,16 @@ public class ShortLinkController {
     @PostMapping("/api/short-link/v1/create")
     public Result<ShortLinkCreateRespDTO> createShortLink(@RequestBody ShortLinkCreateReqDTO requestParam){
         return Results.success(shortLinkService.createShortLink(requestParam));
+    }
+
+    /**
+     * 修改短链接
+     */
+
+    @PutMapping("/api/short-link/v1/update")
+    public Result<Void> updateShortLink(@RequestBody ShortLinkUpdateReqDTO requestParam){
+        shortLinkService.updateShortLink(requestParam);
+        return Results.success();
     }
 
     /**

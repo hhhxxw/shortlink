@@ -3,14 +3,18 @@ package com.nageoffer.shorlink.project.service.impl;
 import cn.hutool.core.bean.BeanUtil;
 import cn.hutool.core.text.StrBuilder;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.nageoffer.shorlink.project.common.convention.exception.ClientException;
 import com.nageoffer.shorlink.project.common.convention.exception.ServiceException;
+import com.nageoffer.shorlink.project.common.enums.ValidDateTypeEnum;
 import com.nageoffer.shorlink.project.dao.entity.ShortLinkDO;
 import com.nageoffer.shorlink.project.dao.mapper.ShortLinkMapper;
 import com.nageoffer.shorlink.project.dto.req.ShortLinkCreateReqDTO;
 import com.nageoffer.shorlink.project.dto.req.ShortLinkPageReqDTO;
+import com.nageoffer.shorlink.project.dto.req.ShortLinkUpdateReqDTO;
 import com.nageoffer.shorlink.project.dto.resp.ShortLinkCreateRespDTO;
 import com.nageoffer.shorlink.project.dto.resp.ShortLinkGroupCountRespDTO;
 import com.nageoffer.shorlink.project.dto.resp.ShortLinkPageRespDTO;
@@ -19,11 +23,15 @@ import com.nageoffer.shorlink.project.toolkit.HashUtil;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.redisson.api.RBloomFilter;
+import org.springframework.boot.actuate.security.AuthorizationAuditListener;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Date;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.stream.Collectors;
 
 /**
@@ -39,6 +47,7 @@ import java.util.stream.Collectors;
 @AllArgsConstructor
 public class ShortLinkServiceImpl extends ServiceImpl<ShortLinkMapper, ShortLinkDO> implements ShortLinkService {
     private final RBloomFilter<String> shortUriCreateCachePenetrationBloomFilter;
+    private final AuthorizationAuditListener authorizationAuditListener;
 
     @Override
     public ShortLinkCreateRespDTO createShortLink(ShortLinkCreateReqDTO requestParam) {
@@ -125,6 +134,101 @@ public class ShortLinkServiceImpl extends ServiceImpl<ShortLinkMapper, ShortLink
                 .collect(Collectors.toList());
         log.info("最终返回结果: {}", result);
         return result;
+    }
+
+    /**
+     * 修改短链接
+     * @param requestParam  修改短链接请求参数
+     */
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void updateShortLink(ShortLinkUpdateReqDTO requestParam) {
+        log.info("修改短链接开始，id: {}", requestParam.getId());
+
+
+        if(requestParam.getId() == null){
+            new ServiceException("短链接不能为空");
+        }
+
+        if (requestParam.getGid() == null || requestParam.getGid().trim().isEmpty()) {
+            throw new ServiceException("分组标识不能为空");
+        }
+
+        if (requestParam.getFullShortUrl() == null || requestParam.getFullShortUrl().trim().isEmpty()) {
+            throw new ServiceException("完整短链接不能为空");
+        }
+
+        // 1. 查询现有短链接记录（使用分片键）
+        // 使用gid + fullShortUrl 作为查询条件，只查询未删除且启用的记录
+        // select * from t_link t where gid == ? and short_url = ? and del_flag = 0 and enable_status = 0
+        LambdaQueryWrapper<ShortLinkDO> queryWrapper = Wrappers.lambdaQuery(ShortLinkDO.class)
+                .eq(ShortLinkDO::getGid, requestParam.getGid())
+                .eq(ShortLinkDO::getFullShortUrl, requestParam.getFullShortUrl())
+                .eq(ShortLinkDO::getDelFlag, 0)
+                .eq(ShortLinkDO::getEnableStatus, 0);
+        ShortLinkDO hasShortLinkDO = baseMapper.selectOne(queryWrapper);
+
+        // 检查短链接是否存在
+        if(hasShortLinkDO == null){
+            // TODO ClientException等几个异常的关系
+            throw new ClientException("短链接记录不存在");
+        }
+
+        if(Objects.equals(hasShortLinkDO.getId(), requestParam.getId())){
+            throw new ServiceException("短链接ID不匹配");
+        }
+
+        // 构建更新对象
+        // 设计思想：
+        // 不可变字段：从原记录中复制
+        // 可变字段：从请求参数中获取
+        ShortLinkDO shortLinkDO = ShortLinkDO.builder()
+                .id(hasShortLinkDO.getId())
+                .domain(hasShortLinkDO.getDomain())
+                .shortUri(hasShortLinkDO.getShortUri())
+                .clickNum(hasShortLinkDO.getClickNum())
+                .favicon(hasShortLinkDO.getFavicon())
+                .createdType(hasShortLinkDO.getCreatedType())
+                .gid(requestParam.getGid())
+                .originUrl(requestParam.getOriginUrl())
+                .describe(requestParam.getDescribe())
+                .validDateType(requestParam.getValidDateType())
+                .validDate(requestParam.getValidDateType() == ValidDateTypeEnum.PERMANENT.getType() ?
+                        new Date(Long.MAX_VALUE) : requestParam.getValidDate())
+                .build();
+        // 根据gid是否变化，采用不同策略
+
+        if(Objects.equals(hasShortLinkDO.getGid(), requestParam.getGid())){
+            // gid没有变化直接更新
+            log.info("gid没有变化，直接更新");
+            LambdaUpdateWrapper<ShortLinkDO> updateWrapper = Wrappers.lambdaUpdate(ShortLinkDO.class)
+                    .eq(ShortLinkDO::getId, requestParam.getId())
+                    .eq(ShortLinkDO::getGid, requestParam.getGid())
+                    .eq(ShortLinkDO::getDelFlag, 0)
+                    .eq(ShortLinkDO::getEnableStatus, 0);
+            int updateRows = baseMapper.update(shortLinkDO, updateWrapper);
+            if(updateRows == 0){
+                throw new ServiceException("更新短链接失败");
+            }
+        } else {
+            // gid已经变化，删除旧记录，插入新记录
+            log.info("gid 已变化，执行 + 插入操作，旧gid: {}, 新gid：{}", hasShortLinkDO.getId(), requestParam.getGid());
+            LambdaQueryWrapper<ShortLinkDO> deleteWrapper = Wrappers.lambdaQuery(ShortLinkDO.class)
+                    .eq(ShortLinkDO::getId,requestParam.getId())
+                    .eq(ShortLinkDO::getGid, hasShortLinkDO.getGid())
+                    .eq(ShortLinkDO::getDelFlag, 0)
+                    .eq(ShortLinkDO::getEnableStatus, 0);
+            int deleteRows = baseMapper.delete(deleteWrapper);
+            if(deleteRows == 0){
+                throw new ServiceException("删除旧短链接记录失败");
+            }
+
+            int insertRows = baseMapper.insert(shortLinkDO);
+            if(insertRows == 0){
+                throw new ServiceException("插入新增短链接失败");
+            }
+        }
+        log.info("修改短链接成功，id: {}", requestParam.getId());
     }
 
     /**
