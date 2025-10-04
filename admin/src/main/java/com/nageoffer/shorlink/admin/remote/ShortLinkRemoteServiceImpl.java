@@ -6,6 +6,7 @@ import com.nageoffer.shorlink.admin.common.convention.result.Result;
 import com.nageoffer.shorlink.admin.remote.dto.req.ShortLinkCreateReqDTO;
 import com.nageoffer.shorlink.admin.remote.dto.req.ShortLinkGroupCountReqDTO;
 import com.nageoffer.shorlink.admin.remote.dto.req.ShortLinkPageReqDTO;
+import com.nageoffer.shorlink.admin.remote.dto.req.ShortLinkUpdateReqDTO;
 import com.nageoffer.shorlink.admin.remote.dto.resp.ShortLinkCreateRespDTO;
 import com.nageoffer.shorlink.admin.remote.dto.resp.ShortLinkGroupCountRespDTO;
 import com.nageoffer.shorlink.admin.remote.dto.resp.ShortLinkPageResult;
@@ -57,7 +58,29 @@ public class ShortLinkRemoteServiceImpl implements ShortLinkRemoteService {
             throw new RuntimeException("远程调用创建短链接失败: " + e.getMessage());
         }
     }
-    
+
+    /**
+     * 修改短链接
+     */
+
+    @Override
+    public Result<Void> updateShortLink(ShortLinkUpdateReqDTO requestParam) {  // 新增
+        String url = projectServiceUrl + "/api/short-link/v1/update";
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+
+        HttpEntity<ShortLinkUpdateReqDTO> entity = new HttpEntity<>(requestParam, headers);
+
+        try {
+            String response = restTemplate.postForObject(url, entity, String.class);
+            return JSON.parseObject(response, new TypeReference<Result<Void>>() {});
+        } catch (Exception e) {
+            log.error("远程调用修改短链接失败", e);
+            throw new RuntimeException("远程调用修改短链接失败: " + e.getMessage());
+        }
+    }
+
     @Override
     public Result<ShortLinkPageResult> pageShortLink(ShortLinkPageReqDTO requestParam) {
         String url = projectServiceUrl + "/api/short-link/v1/page?gid={gid}&current={current}&size={size}";

@@ -4,13 +4,11 @@ import com.nageoffer.shorlink.admin.common.convention.result.Result;
 import com.nageoffer.shorlink.admin.remote.ShortLinkRemoteService;
 import com.nageoffer.shorlink.admin.remote.dto.req.ShortLinkCreateReqDTO;
 import com.nageoffer.shorlink.admin.remote.dto.req.ShortLinkPageReqDTO;
+import com.nageoffer.shorlink.admin.remote.dto.req.ShortLinkUpdateReqDTO;
 import com.nageoffer.shorlink.admin.remote.dto.resp.ShortLinkCreateRespDTO;
 import com.nageoffer.shorlink.admin.remote.dto.resp.ShortLinkPageResult;
 import lombok.RequiredArgsConstructor;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 /**
  * <p>
@@ -40,5 +38,13 @@ public class ShortLinkController {
     @GetMapping("/api/short-link/admin/v1/page")
     public Result<ShortLinkPageResult> pageShortLink(ShortLinkPageReqDTO requestParam) {
         return shortLinkRemoteService.pageShortLink(requestParam);
+    }
+
+    /**
+     * 修改短链接
+     */
+    @PutMapping("/api/short-link/admin/v1/update")
+    public Result<Void> updateShortLink(@RequestBody ShortLinkUpdateReqDTO requestParam) {  // 新增
+        return shortLinkRemoteService.updateShortLink(requestParam);
     }
 }
