@@ -23,7 +23,6 @@ import com.nageoffer.shorlink.project.toolkit.HashUtil;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.redisson.api.RBloomFilter;
-import org.springframework.boot.actuate.security.AuthorizationAuditListener;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -47,8 +46,6 @@ import java.util.stream.Collectors;
 @AllArgsConstructor
 public class ShortLinkServiceImpl extends ServiceImpl<ShortLinkMapper, ShortLinkDO> implements ShortLinkService {
     private final RBloomFilter<String> shortUriCreateCachePenetrationBloomFilter;
-    private final AuthorizationAuditListener authorizationAuditListener;
-
     @Override
     public ShortLinkCreateRespDTO createShortLink(ShortLinkCreateReqDTO requestParam) {
         // 生成短链接
@@ -147,11 +144,15 @@ public class ShortLinkServiceImpl extends ServiceImpl<ShortLinkMapper, ShortLink
 
 
         if(requestParam.getId() == null){
-            new ServiceException("短链接不能为空");
+            throw new ServiceException("短链接ID不能为空");
         }
 
         if (requestParam.getGid() == null || requestParam.getGid().trim().isEmpty()) {
             throw new ServiceException("分组标识不能为空");
+        }
+        
+        if (requestParam.getOriginalGid() == null || requestParam.getOriginalGid().trim().isEmpty()) {
+            throw new ServiceException("原始分组标识不能为空");
         }
 
         if (requestParam.getFullShortUrl() == null || requestParam.getFullShortUrl().trim().isEmpty()) {
@@ -159,23 +160,26 @@ public class ShortLinkServiceImpl extends ServiceImpl<ShortLinkMapper, ShortLink
         }
 
         // 1. 查询现有短链接记录（使用分片键）
-        // 使用gid + fullShortUrl 作为查询条件，只查询未删除且启用的记录
-        // select * from t_link t where gid == ? and short_url = ? and del_flag = 0 and enable_status = 0
+        // ⚠️ 关键：必须使用 originalGid 查询，因为 gid 是分片键
+        // 使用 originalGid + fullShortUrl 作为查询条件，只查询未删除的记录
+        // select * from t_link t where gid = ? and full_short_url = ? and del_flag = 0
+        log.info("查询短链接，originalGid: {}, fullShortUrl: {}", requestParam.getOriginalGid(), requestParam.getFullShortUrl());
         LambdaQueryWrapper<ShortLinkDO> queryWrapper = Wrappers.lambdaQuery(ShortLinkDO.class)
-                .eq(ShortLinkDO::getGid, requestParam.getGid())
+                .eq(ShortLinkDO::getGid, requestParam.getOriginalGid())  // 使用原始gid定位记录
                 .eq(ShortLinkDO::getFullShortUrl, requestParam.getFullShortUrl())
-                .eq(ShortLinkDO::getDelFlag, 0)
-                .eq(ShortLinkDO::getEnableStatus, 0);
+                .eq(ShortLinkDO::getDelFlag, 0);
         ShortLinkDO hasShortLinkDO = baseMapper.selectOne(queryWrapper);
 
         // 检查短链接是否存在
         if(hasShortLinkDO == null){
-            // TODO ClientException等几个异常的关系
+            log.error("短链接记录不存在，originalGid: {}, fullShortUrl: {}", requestParam.getOriginalGid(), requestParam.getFullShortUrl());
             throw new ClientException("短链接记录不存在");
         }
+        
+        log.info("查询到短链接，id: {}, originalGid: {}, targetGid: {}", hasShortLinkDO.getId(), hasShortLinkDO.getGid(), requestParam.getGid());
 
-        if(Objects.equals(hasShortLinkDO.getId(), requestParam.getId())){
-            throw new ServiceException("短链接ID不匹配");
+        if(!Objects.equals(hasShortLinkDO.getId(), requestParam.getId())){
+            throw new ServiceException("短链接ID不匹配，可能存在数据不一致");
         }
 
         // 构建更新对象
@@ -198,26 +202,24 @@ public class ShortLinkServiceImpl extends ServiceImpl<ShortLinkMapper, ShortLink
                 .build();
         // 根据gid是否变化，采用不同策略
 
-        if(Objects.equals(hasShortLinkDO.getGid(), requestParam.getGid())){
-            // gid没有变化直接更新
-            log.info("gid没有变化，直接更新");
+        if(Objects.equals(requestParam.getOriginalGid(), requestParam.getGid())){
+            // gid没有变化直接更新（originalGid == gid）
+            log.info("gid没有变化，直接更新，id: {}, gid: {}", requestParam.getId(), requestParam.getGid());
             LambdaUpdateWrapper<ShortLinkDO> updateWrapper = Wrappers.lambdaUpdate(ShortLinkDO.class)
                     .eq(ShortLinkDO::getId, requestParam.getId())
-                    .eq(ShortLinkDO::getGid, requestParam.getGid())
-                    .eq(ShortLinkDO::getDelFlag, 0)
-                    .eq(ShortLinkDO::getEnableStatus, 0);
+                    .eq(ShortLinkDO::getGid, requestParam.getOriginalGid())  // 使用原始gid定位记录
+                    .eq(ShortLinkDO::getDelFlag, 0);
             int updateRows = baseMapper.update(shortLinkDO, updateWrapper);
             if(updateRows == 0){
                 throw new ServiceException("更新短链接失败");
             }
         } else {
             // gid已经变化，删除旧记录，插入新记录
-            log.info("gid 已变化，执行 + 插入操作，旧gid: {}, 新gid：{}", hasShortLinkDO.getId(), requestParam.getGid());
-            LambdaQueryWrapper<ShortLinkDO> deleteWrapper = Wrappers.lambdaQuery(ShortLinkDO.class)
+            log.info("gid 已变化，执行删除+插入操作，旧gid: {}, 新gid：{}", requestParam.getOriginalGid(), requestParam.getGid());
+            LambdaUpdateWrapper<ShortLinkDO> deleteWrapper = Wrappers.lambdaUpdate(ShortLinkDO.class)
                     .eq(ShortLinkDO::getId,requestParam.getId())
-                    .eq(ShortLinkDO::getGid, hasShortLinkDO.getGid())
-                    .eq(ShortLinkDO::getDelFlag, 0)
-                    .eq(ShortLinkDO::getEnableStatus, 0);
+                    .eq(ShortLinkDO::getGid, requestParam.getOriginalGid())  // 使用原始gid定位要删除的记录
+                    .eq(ShortLinkDO::getDelFlag, 0);
             int deleteRows = baseMapper.delete(deleteWrapper);
             if(deleteRows == 0){
                 throw new ServiceException("删除旧短链接记录失败");

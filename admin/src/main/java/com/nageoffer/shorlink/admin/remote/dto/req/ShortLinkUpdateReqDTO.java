@@ -36,7 +36,12 @@ public class ShortLinkUpdateReqDTO {
     private String fullShortUrl;
 
     /**
-     * 分组标识
+     * 原始分组标识（用于定位记录）
+     */
+    private String originalGid;
+    
+    /**
+     * 分组标识（目标分组）
      */
     private String gid;
 

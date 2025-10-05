@@ -2,6 +2,7 @@ package com.nageoffer.shorlink.admin.remote;
 
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.TypeReference;
+import com.nageoffer.shorlink.admin.common.biz.user.UserContext;
 import com.nageoffer.shorlink.admin.common.convention.result.Result;
 import com.nageoffer.shorlink.admin.remote.dto.req.ShortLinkCreateReqDTO;
 import com.nageoffer.shorlink.admin.remote.dto.req.ShortLinkGroupCountReqDTO;
@@ -62,19 +63,30 @@ public class ShortLinkRemoteServiceImpl implements ShortLinkRemoteService {
     /**
      * 修改短链接
      */
-
     @Override
-    public Result<Void> updateShortLink(ShortLinkUpdateReqDTO requestParam) {  // 新增
+    public Result<Void> updateShortLink(ShortLinkUpdateReqDTO requestParam) {
         String url = projectServiceUrl + "/api/short-link/v1/update";
+        
+        log.info("远程调用修改短链接开始 - URL: {}", url);
+        log.info("远程调用修改短链接 - 请求参数: {}", JSON.toJSONString(requestParam));
 
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
+        
+        // 传递用户信息到project服务（关键修复！）
+        String username = UserContext.getUsername();
+        if (username != null) {
+            headers.set("username", username);
+            log.info("传递用户信息 - username: {}", username);
+        }
 
         HttpEntity<ShortLinkUpdateReqDTO> entity = new HttpEntity<>(requestParam, headers);
 
         try {
-            String response = restTemplate.postForObject(url, entity, String.class);
-            return JSON.parseObject(response, new TypeReference<Result<Void>>() {});
+            // 使用 PUT 方法
+            restTemplate.put(url, entity);
+            log.info("远程调用修改短链接成功");
+            return new Result<Void>().setCode("0").setMessage("修改成功");
         } catch (Exception e) {
             log.error("远程调用修改短链接失败", e);
             throw new RuntimeException("远程调用修改短链接失败: " + e.getMessage());

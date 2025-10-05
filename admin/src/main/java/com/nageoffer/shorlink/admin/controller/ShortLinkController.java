@@ -1,6 +1,7 @@
 package com.nageoffer.shorlink.admin.controller;
 
 import com.nageoffer.shorlink.admin.common.convention.result.Result;
+import com.nageoffer.shorlink.admin.common.convention.result.Results;
 import com.nageoffer.shorlink.admin.remote.ShortLinkRemoteService;
 import com.nageoffer.shorlink.admin.remote.dto.req.ShortLinkCreateReqDTO;
 import com.nageoffer.shorlink.admin.remote.dto.req.ShortLinkPageReqDTO;
@@ -45,6 +46,7 @@ public class ShortLinkController {
      */
     @PutMapping("/api/short-link/admin/v1/update")
     public Result<Void> updateShortLink(@RequestBody ShortLinkUpdateReqDTO requestParam) {  // 新增
-        return shortLinkRemoteService.updateShortLink(requestParam);
+        shortLinkRemoteService.updateShortLink(requestParam);
+        return Results.success();
     }
 }
