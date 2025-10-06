@@ -55,6 +55,18 @@ public class ShortLinkServiceImpl extends ServiceImpl<ShortLinkMapper, ShortLink
                 .append("/")
                 .append(shortLinkSuffix)
                 .toString();
+        
+        // 处理有效期：如果是永久有效，设置为MySQL支持的最大日期
+        Date validDate;
+        if (requestParam.getValidDateType() != null && 
+            requestParam.getValidDateType() == ValidDateTypeEnum.PERMANENT.getType()) {
+            // 永久有效：设置为9999-12-31 23:59:59
+            validDate = new Date(253402271999000L);  // 9999-12-31 23:59:59
+        } else {
+            // 自定义有效期：使用传入的日期
+            validDate = requestParam.getValidDate();
+        }
+        
         // 组装ShortLinkDO, insert入库
         ShortLinkDO shortLinkDO = ShortLinkDO.builder()
                 .domain(requestParam.getDomain())
@@ -62,7 +74,7 @@ public class ShortLinkServiceImpl extends ServiceImpl<ShortLinkMapper, ShortLink
                 .gid(requestParam.getGid())
                 .createdType(requestParam.getCreatedType())
                 .validDateType(requestParam.getValidDateType())
-                .validDate(requestParam.getValidDate())
+                .validDate(validDate)
                 .describe(requestParam.getDescribe())
                 .shortUri(shortLinkSuffix)
                 .enableStatus(1)  // 改为创建时就启用
@@ -186,6 +198,18 @@ public class ShortLinkServiceImpl extends ServiceImpl<ShortLinkMapper, ShortLink
         // 设计思想：
         // 不可变字段：从原记录中复制
         // 可变字段：从请求参数中获取
+        
+        // 处理有效期：如果是永久有效，设置为MySQL支持的最大日期
+        Date validDate;
+        if (requestParam.getValidDateType() != null && 
+            requestParam.getValidDateType() == ValidDateTypeEnum.PERMANENT.getType()) {
+            // 永久有效：设置为9999-12-31 23:59:59
+            validDate = new Date(253402271999000L);  // 9999-12-31 23:59:59
+        } else {
+            // 自定义有效期：使用传入的日期
+            validDate = requestParam.getValidDate();
+        }
+        
         ShortLinkDO shortLinkDO = ShortLinkDO.builder()
                 .id(hasShortLinkDO.getId())
                 .domain(hasShortLinkDO.getDomain())
@@ -197,8 +221,7 @@ public class ShortLinkServiceImpl extends ServiceImpl<ShortLinkMapper, ShortLink
                 .originUrl(requestParam.getOriginUrl())
                 .describe(requestParam.getDescribe())
                 .validDateType(requestParam.getValidDateType())
-                .validDate(requestParam.getValidDateType() == ValidDateTypeEnum.PERMANENT.getType() ?
-                        new Date(Long.MAX_VALUE) : requestParam.getValidDate())
+                .validDate(validDate)
                 .build();
         // 根据gid是否变化，采用不同策略
 
