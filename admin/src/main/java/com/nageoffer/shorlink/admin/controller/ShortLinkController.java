@@ -24,7 +24,7 @@ import org.springframework.web.bind.annotation.*;
 public class ShortLinkController {
     
     private final ShortLinkRemoteService shortLinkRemoteService;
-    
+
     /**
      * 创建短链接
      */

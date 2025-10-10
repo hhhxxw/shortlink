@@ -11,6 +11,8 @@ import com.nageoffer.shorlink.project.common.convention.exception.ClientExceptio
 import com.nageoffer.shorlink.project.common.convention.exception.ServiceException;
 import com.nageoffer.shorlink.project.common.enums.ValidDateTypeEnum;
 import com.nageoffer.shorlink.project.dao.entity.ShortLinkDO;
+import com.nageoffer.shorlink.project.dao.entity.ShortLinkGotoDO;
+import com.nageoffer.shorlink.project.dao.mapper.ShortLinkGotoMapper;
 import com.nageoffer.shorlink.project.dao.mapper.ShortLinkMapper;
 import com.nageoffer.shorlink.project.dto.req.ShortLinkCreateReqDTO;
 import com.nageoffer.shorlink.project.dto.req.ShortLinkPageReqDTO;
@@ -20,6 +22,8 @@ import com.nageoffer.shorlink.project.dto.resp.ShortLinkGroupCountRespDTO;
 import com.nageoffer.shorlink.project.dto.resp.ShortLinkPageRespDTO;
 import com.nageoffer.shorlink.project.service.ShortLinkService;
 import com.nageoffer.shorlink.project.toolkit.HashUtil;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.redisson.api.RBloomFilter;
@@ -27,6 +31,7 @@ import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.io.IOException;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
@@ -46,6 +51,7 @@ import java.util.stream.Collectors;
 @AllArgsConstructor
 public class ShortLinkServiceImpl extends ServiceImpl<ShortLinkMapper, ShortLinkDO> implements ShortLinkService {
     private final RBloomFilter<String> shortUriCreateCachePenetrationBloomFilter;
+    private final ShortLinkGotoMapper shortLinkGotoMapper;
     @Override
     public ShortLinkCreateRespDTO createShortLink(ShortLinkCreateReqDTO requestParam) {
         // 生成短链接
@@ -77,26 +83,30 @@ public class ShortLinkServiceImpl extends ServiceImpl<ShortLinkMapper, ShortLink
                 .validDate(validDate)
                 .describe(requestParam.getDescribe())
                 .shortUri(shortLinkSuffix)
-                .enableStatus(1)  // 改为创建时就启用
+                .enableStatus(1)
                 .fullShortUrl(fullShorUrl)
+                .build();
+
+        ShortLinkGotoDO linkGotoDO = ShortLinkGotoDO.builder()
+                .fullShortUrl(fullShorUrl)
+                .gid(requestParam.getGid())
                 .build();
         try {
             baseMapper.insert(shortLinkDO);
+            shortLinkGotoMapper.insert(linkGotoDO);
+            // 插入成功后才加入布隆过滤器，防止插入失败时误加
+            shortUriCreateCachePenetrationBloomFilter.add(fullShorUrl);
         }catch (DuplicateKeyException ex){
-            // TODO 当发生 DuplicateKeyException 时，只是检查数据库中是否真的存在该链接，如果存在就抛异常。但没有尝试生成一个新的短链接来避免冲突。
-            // 出发唯一键冲突
-            // 查询数据库， 看是否真的存在
+            // 触发唯一键冲突：查询数据库确认是否真的存在
             LambdaQueryWrapper<ShortLinkDO> queryWrapper = Wrappers.lambdaQuery(ShortLinkDO.class)
                     .eq(ShortLinkDO::getFullShortUrl, fullShorUrl);
             ShortLinkDO hasShortLinkDO = baseMapper.selectOne(queryWrapper);
-            // 存在抛出业务异常
+            // 存在则抛出业务异常
             if(hasShortLinkDO != null){
                 log.warn("短链接{}重复入库", fullShorUrl);
                 throw new ServiceException("短链接生成重复");
             }
         }
-        // TODO 等待验证，这里应该添加fullShortUrl，生成的时候判断是用的fullShortUrl？
-        shortUriCreateCachePenetrationBloomFilter.add(shortLinkSuffix);
         return ShortLinkCreateRespDTO.builder()
                 .fullShortUrl(shortLinkDO.getFullShortUrl())
                 .originUrl(requestParam.getOriginUrl())
@@ -143,6 +153,72 @@ public class ShortLinkServiceImpl extends ServiceImpl<ShortLinkMapper, ShortLink
                 .collect(Collectors.toList());
         log.info("最终返回结果: {}", result);
         return result;
+    }
+
+    /**
+     * 短链接跳转
+     * @param shortUri 短链接后缀
+     * @param request Http 请求
+     * @param response Http 响应
+     */
+
+    @Override
+    public void restoreUrl(String shortUri, HttpServletRequest request, HttpServletResponse response) throws IOException {
+        // 1. 构建完整短链接
+        String serverName = request.getServerName();
+        int serverPort = request.getServerPort();
+        // 构建完整域名（包含端口号，与创建时保持一致）
+        String fullShortUrl = serverName + ":" + serverPort + "/" + shortUri;
+        
+        // 2. 风控：布隆过滤器检查（防止缓存穿透）
+        if (!shortUriCreateCachePenetrationBloomFilter.contains(fullShortUrl)) {
+            log.warn("短链接不存在或已被删除：{}", fullShortUrl);
+            response.sendRedirect("/page/notfound");  // 跳转到404页面
+            return;
+        }
+
+        // 3. 查询路由表（t_link_goto）获取gid
+        LambdaQueryWrapper<ShortLinkGotoDO> linkGotoQueryWrapper = Wrappers.lambdaQuery(ShortLinkGotoDO.class)
+                .eq(ShortLinkGotoDO::getFullShortUrl, fullShortUrl);
+        ShortLinkGotoDO shortLinkGotoDO = shortLinkGotoMapper.selectOne(linkGotoQueryWrapper);
+        
+        if(shortLinkGotoDO == null) {
+            log.warn("路由表中未找到短链接：{}", fullShortUrl);
+            response.sendRedirect("/page/notfound");
+            return;
+        }
+
+        // 4. 根据gid查询短链接详情（自动路由到对应分片）
+        LambdaQueryWrapper<ShortLinkDO> queryWrapper = Wrappers.lambdaQuery(ShortLinkDO.class)
+                .eq(ShortLinkDO::getGid, shortLinkGotoDO.getGid())
+                .eq(ShortLinkDO::getFullShortUrl, fullShortUrl)
+                .eq(ShortLinkDO::getEnableStatus, 1)  // 只查询已启用的
+                .eq(ShortLinkDO::getDelFlag, 0);      // 未删除的
+        ShortLinkDO shortLinkDO = baseMapper.selectOne(queryWrapper);
+        
+        if(shortLinkDO == null){
+            log.warn("短链接详情未找到或已禁用：{}", fullShortUrl);
+            response.sendRedirect("/page/notfound");
+            return;
+        }
+        
+        // 5. 检查是否过期
+        if (shortLinkDO.getValidDate() != null && shortLinkDO.getValidDate().before(new Date())) {
+            log.warn("短链接已过期：{}, 过期时间：{}", fullShortUrl, shortLinkDO.getValidDate());
+            response.sendRedirect("/page/expired");  // 跳转到过期页面
+            return;
+        }
+        
+        // 6. 更新访问统计（点击次数）
+        baseMapper.incrementClickNum(shortLinkDO.getGid(), fullShortUrl);
+        
+        // 7. 异步记录访问日志（IP、User-Agent、来源等）
+        // TODO: 后续实现访问日志记录功能
+        // asyncRecordAccessLog(shortLinkDO, request);
+        
+        // 8. 执行302重定向到原始URL
+        response.sendRedirect(shortLinkDO.getOriginUrl());
+        log.info("短链接跳转成功：{} -> {}", fullShortUrl, shortLinkDO.getOriginUrl());
     }
 
     /**
