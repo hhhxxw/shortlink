@@ -104,6 +104,10 @@ public class ShortLinkServiceImpl extends ServiceImpl<ShortLinkMapper, ShortLink
             shortLinkGotoMapper.insert(linkGotoDO);
             // 插入成功后才加入布隆过滤器，防止插入失败时误加
             shortUriCreateCachePenetrationBloomFilter.add(fullShorUrl);
+            
+            // 创建成功后立即写入缓存（缓存预热）
+            setToCache(fullShorUrl, shortLinkDO);
+            log.debug("短链接创建成功，已预热缓存：{}", fullShorUrl);
         }catch (DuplicateKeyException ex){
             // 触发唯一键冲突：查询数据库确认是否真的存在
             LambdaQueryWrapper<ShortLinkDO> queryWrapper = Wrappers.lambdaQuery(ShortLinkDO.class)
@@ -176,14 +180,21 @@ public class ShortLinkServiceImpl extends ServiceImpl<ShortLinkMapper, ShortLink
         int serverPort = request.getServerPort();
         String fullShortUrl = serverName + ":" + serverPort + "/" + shortUri;
 
-        // 2. 风控：布隆过滤器检查（防止缓存穿透）
+        // 2. 风控：布隆过滤器检查（第一层防护 - 防止缓存穿透）
         if (!shortUriCreateCachePenetrationBloomFilter.contains(fullShortUrl)) {
             log.warn("布隆过滤器拦截 - 短链接不存在：{}", fullShortUrl);
             response.sendRedirect("/page/notfound");
             return;
         }
 
-        // 3. 查询 Redis 缓存
+        // 3. 检查是否命中空值缓存（第二层防护 - 防止布隆过滤器误判）
+        if (isCachedAsNull(fullShortUrl)) {
+            log.info("✅ 命中空值缓存：{}", fullShortUrl);
+            response.sendRedirect("/page/notfound");
+            return;
+        }
+
+        // 4. 查询 Redis 正常缓存
         ShortLinkDO cachedShortLink = getFromCache(fullShortUrl);
         if (cachedShortLink != null) {
             log.info("✅ 缓存命中：{}", fullShortUrl);
@@ -201,7 +212,7 @@ public class ShortLinkServiceImpl extends ServiceImpl<ShortLinkMapper, ShortLink
             return;
         }
 
-        // 4. 缓存未命中，使用分布式锁防止缓存击穿
+        // 5. 缓存未命中，使用分布式锁防止缓存击穿
         String lockKey = RedisKeyConstant.getLockKey(fullShortUrl);
         RLock lock = redissonClient.getLock(lockKey);
         
@@ -211,7 +222,14 @@ public class ShortLinkServiceImpl extends ServiceImpl<ShortLinkMapper, ShortLink
                 try {
                     log.debug("🔒 获取分布式锁成功：{}", fullShortUrl);
                     
-                    // 5. Double Check：再次检查缓存（可能其他线程已写入）
+                    // 6. Double Check：空值缓存
+                    if (isCachedAsNull(fullShortUrl)) {
+                        log.info("✅ Double Check 命中空值缓存");
+                        response.sendRedirect("/page/notfound");
+                        return;
+                    }
+                    
+                    // 7. Double Check：正常缓存（可能其他线程已写入）
                     cachedShortLink = getFromCache(fullShortUrl);
                     if (cachedShortLink != null) {
                         log.info("✅ Double Check 缓存命中：{}", fullShortUrl);
@@ -226,30 +244,33 @@ public class ShortLinkServiceImpl extends ServiceImpl<ShortLinkMapper, ShortLink
                         return;
                     }
                     
-                    // 6. 查询数据库
+                    // 8. 查询数据库
                     log.info("❌ 缓存未命中，查询数据库：{}", fullShortUrl);
                     ShortLinkDO shortLinkDO = queryFromDatabase(fullShortUrl);
                     
                     if (shortLinkDO == null) {
                         log.warn("数据库中未找到短链接：{}", fullShortUrl);
+                        // ✅ 先缓存空值（防止布隆过滤器误判导致的重复查询）
+                        cacheNullValue(fullShortUrl);
+                        // 再重定向
                         response.sendRedirect("/page/notfound");
                         return;
                     }
                     
-                    // 7. 检查是否过期
+                    // 9. 检查是否过期
                     if (shortLinkDO.getValidDate() != null && shortLinkDO.getValidDate().before(new Date())) {
                         log.warn("短链接已过期：{}, 过期时间：{}", fullShortUrl, shortLinkDO.getValidDate());
                         response.sendRedirect("/page/expired");
                         return;
                     }
                     
-                    // 8. 写入缓存（1小时）
+                    // 10. 写入缓存（1小时）
                     setToCache(fullShortUrl, shortLinkDO);
                     
-                    // 9. 更新访问统计
+                    // 11. 更新访问统计
                     baseMapper.incrementClickNum(shortLinkDO.getGid(), fullShortUrl);
                     
-                    // 10. 执行重定向
+                    // 12. 执行重定向
                     response.sendRedirect(shortLinkDO.getOriginUrl());
                     log.info("短链接跳转成功（数据库）：{} -> {}", fullShortUrl, shortLinkDO.getOriginUrl());
                     
@@ -258,16 +279,22 @@ public class ShortLinkServiceImpl extends ServiceImpl<ShortLinkMapper, ShortLink
                     log.debug("🔓 释放分布式锁：{}", fullShortUrl);
                 }
             } else {
-                // 获取锁超时
+                // 获取锁超时 - 降级处理
                 log.warn("⚠️ 获取分布式锁超时，降级查询：{}", fullShortUrl);
-                // 降级处理：直接查数据库（不写缓存）
                 ShortLinkDO shortLinkDO = queryFromDatabase(fullShortUrl);
-                if (shortLinkDO != null && 
-                    (shortLinkDO.getValidDate() == null || shortLinkDO.getValidDate().after(new Date()))) {
+                
+                if (shortLinkDO == null) {
+                    // ✅ 数据不存在，缓存空值
+                    cacheNullValue(fullShortUrl);
+                    response.sendRedirect("/page/notfound");
+                } else if (shortLinkDO.getValidDate() != null && 
+                           shortLinkDO.getValidDate().before(new Date())) {
+                    // 已过期
+                    response.sendRedirect("/page/expired");
+                } else {
+                    // 正常跳转
                     baseMapper.incrementClickNum(shortLinkDO.getGid(), fullShortUrl);
                     response.sendRedirect(shortLinkDO.getOriginUrl());
-                } else {
-                    response.sendRedirect("/page/notfound");
                 }
             }
         } catch (InterruptedException e) {
@@ -368,6 +395,10 @@ public class ShortLinkServiceImpl extends ServiceImpl<ShortLinkMapper, ShortLink
             if(updateRows == 0){
                 throw new ServiceException("更新短链接失败");
             }
+            
+            // 更新成功后，刷新缓存
+            setToCache(requestParam.getFullShortUrl(), shortLinkDO);
+            log.debug("短链接修改成功，已更新缓存：{}", requestParam.getFullShortUrl());
         } else {
             // gid已经变化，删除旧记录，插入新记录
             log.info("gid 已变化，执行删除+插入操作，旧gid: {}, 新gid：{}", requestParam.getOriginalGid(), requestParam.getGid());
@@ -384,6 +415,10 @@ public class ShortLinkServiceImpl extends ServiceImpl<ShortLinkMapper, ShortLink
             if(insertRows == 0){
                 throw new ServiceException("插入新增短链接失败");
             }
+            
+            // gid变化后，也要更新缓存
+            setToCache(requestParam.getFullShortUrl(), shortLinkDO);
+            log.debug("短链接修改成功（gid变化），已更新缓存：{}", requestParam.getFullShortUrl());
         }
         log.info("修改短链接成功，id: {}", requestParam.getId());
     }
@@ -416,7 +451,7 @@ public class ShortLinkServiceImpl extends ServiceImpl<ShortLinkMapper, ShortLink
     }
 
     // ==================== 缓存相关辅助方法 ====================
-    
+
     /**
      * 从 Redis 缓存查询短链接
      * @param fullShortUrl 完整短链接
@@ -426,8 +461,9 @@ public class ShortLinkServiceImpl extends ServiceImpl<ShortLinkMapper, ShortLink
         try {
             String cacheKey = RedisKeyConstant.getShortLinkCacheKey(fullShortUrl);
             String cachedJson = stringRedisTemplate.opsForValue().get(cacheKey);
-            
-            if (cachedJson != null && !cachedJson.isEmpty()) {
+
+            if (cachedJson != null && !cachedJson.isEmpty() && !"null".equals(cachedJson)) {
+                // 正常的JSON数据
                 return JSON.parseObject(cachedJson, ShortLinkDO.class);
             }
         } catch (Exception e) {
@@ -445,12 +481,15 @@ public class ShortLinkServiceImpl extends ServiceImpl<ShortLinkMapper, ShortLink
         try {
             String cacheKey = RedisKeyConstant.getShortLinkCacheKey(fullShortUrl);
             String jsonValue = JSON.toJSONString(shortLinkDO);
-            // 缓存1小时
-            stringRedisTemplate.opsForValue().set(cacheKey, jsonValue, 1, TimeUnit.HOURS);
-            log.debug("写入缓存成功：{}, TTL=1小时", fullShortUrl);
+            
+            // 使用 LinkUtil 计算动态缓存有效期
+            long cacheValidTime = com.nageoffer.shorlink.project.toolkit.LinkUtil.getLinkCacheValidDate(shortLinkDO.getValidDate());
+            
+            // 设置缓存，TTL = 动态计算的有效期
+            stringRedisTemplate.opsForValue().set(cacheKey, jsonValue, cacheValidTime, TimeUnit.MILLISECONDS);
+            log.debug("写入缓存成功：{}，TTL={}ms", fullShortUrl, cacheValidTime);
         } catch (Exception e) {
             log.error("写入缓存失败：{}", fullShortUrl, e);
-            // 缓存写入失败不影响主流程
         }
     }
     
@@ -482,6 +521,47 @@ public class ShortLinkServiceImpl extends ServiceImpl<ShortLinkMapper, ShortLink
         } catch (Exception e) {
             log.error("数据库查询短链接失败：{}", fullShortUrl, e);
             return null;
+        }
+    }
+
+    /**
+     * 缓存空值（防止布隆过滤器误判导致的缓存穿透）
+     * @param fullShortUrl 完整短链接
+     */
+    private void cacheNullValue(String fullShortUrl) {
+        try {
+            String cacheKey = RedisKeyConstant.getShortLinkCacheKey(fullShortUrl);
+
+            // 缓存一个特殊标记（空对象）
+            String nullMarker = "null";
+
+            // 设置较短的过期时间（5分钟），避免占用过多内存
+            stringRedisTemplate.opsForValue().set(
+                    cacheKey,
+                    nullMarker,
+                    5,
+                    TimeUnit.MINUTES
+            );
+
+            log.debug("缓存空值成功：{}, TTL=5分钟", fullShortUrl);
+        } catch (Exception e) {
+            log.error("缓存空值失败：{}", fullShortUrl, e);
+        }
+    }
+    
+    /**
+     * 判断是否缓存了空值
+     * @param fullShortUrl 完整短链接
+     * @return true-命中空值缓存，false-未命中
+     */
+    private boolean isCachedAsNull(String fullShortUrl) {
+        try {
+            String cacheKey = RedisKeyConstant.getShortLinkCacheKey(fullShortUrl);
+            String value = stringRedisTemplate.opsForValue().get(cacheKey);
+            return "null".equals(value);
+        } catch (Exception e) {
+            log.error("检查空值缓存失败：{}", fullShortUrl, e);
+            return false;
         }
     }
 }
