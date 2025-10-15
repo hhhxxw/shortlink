@@ -9,6 +9,7 @@ import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.nageoffer.shorlink.project.common.constant.RedisKeyConstant;
+import com.nageoffer.shorlink.project.common.constant.ShortLinkConstant;
 import com.nageoffer.shorlink.project.common.convention.exception.ClientException;
 import com.nageoffer.shorlink.project.common.convention.exception.ServiceException;
 import com.nageoffer.shorlink.project.common.enums.ValidDateTypeEnum;
@@ -183,14 +184,14 @@ public class ShortLinkServiceImpl extends ServiceImpl<ShortLinkMapper, ShortLink
         // 2. 风控：布隆过滤器检查（第一层防护 - 防止缓存穿透）
         if (!shortUriCreateCachePenetrationBloomFilter.contains(fullShortUrl)) {
             log.warn("布隆过滤器拦截 - 短链接不存在：{}", fullShortUrl);
-            response.sendRedirect("/page/notfound");
+            response.sendRedirect(ShortLinkConstant.PAGE_NOT_FOUND);
             return;
         }
 
         // 3. 检查是否命中空值缓存（第二层防护 - 防止布隆过滤器误判）
         if (isCachedAsNull(fullShortUrl)) {
             log.info("✅ 命中空值缓存：{}", fullShortUrl);
-            response.sendRedirect("/page/notfound");
+            response.sendRedirect(ShortLinkConstant.PAGE_NOT_FOUND);
             return;
         }
 
@@ -201,7 +202,7 @@ public class ShortLinkServiceImpl extends ServiceImpl<ShortLinkMapper, ShortLink
             // 检查是否过期
             if (cachedShortLink.getValidDate() != null && cachedShortLink.getValidDate().before(new Date())) {
                 log.warn("短链接已过期：{}, 过期时间：{}", fullShortUrl, cachedShortLink.getValidDate());
-                response.sendRedirect("/page/expired");
+                response.sendRedirect(ShortLinkConstant.PAGE_EXPIRED);
                 return;
             }
             // 异步更新访问统计
@@ -225,7 +226,7 @@ public class ShortLinkServiceImpl extends ServiceImpl<ShortLinkMapper, ShortLink
                     // 6. Double Check：空值缓存
                     if (isCachedAsNull(fullShortUrl)) {
                         log.info("✅ Double Check 命中空值缓存");
-                        response.sendRedirect("/page/notfound");
+                        response.sendRedirect(ShortLinkConstant.PAGE_NOT_FOUND);
                         return;
                     }
                     
@@ -236,7 +237,7 @@ public class ShortLinkServiceImpl extends ServiceImpl<ShortLinkMapper, ShortLink
                         // 检查是否过期
                         if (cachedShortLink.getValidDate() != null && cachedShortLink.getValidDate().before(new Date())) {
                             log.warn("短链接已过期：{}", fullShortUrl);
-                            response.sendRedirect("/page/expired");
+                            response.sendRedirect(ShortLinkConstant.PAGE_EXPIRED);
                             return;
                         }
                         baseMapper.incrementClickNum(cachedShortLink.getGid(), fullShortUrl);
@@ -253,14 +254,14 @@ public class ShortLinkServiceImpl extends ServiceImpl<ShortLinkMapper, ShortLink
                         // ✅ 先缓存空值（防止布隆过滤器误判导致的重复查询）
                         cacheNullValue(fullShortUrl);
                         // 再重定向
-                        response.sendRedirect("/page/notfound");
+                        response.sendRedirect(ShortLinkConstant.PAGE_NOT_FOUND);
                         return;
                     }
                     
                     // 9. 检查是否过期
                     if (shortLinkDO.getValidDate() != null && shortLinkDO.getValidDate().before(new Date())) {
                         log.warn("短链接已过期：{}, 过期时间：{}", fullShortUrl, shortLinkDO.getValidDate());
-                        response.sendRedirect("/page/expired");
+                        response.sendRedirect(ShortLinkConstant.PAGE_EXPIRED);
                         return;
                     }
                     
@@ -286,11 +287,11 @@ public class ShortLinkServiceImpl extends ServiceImpl<ShortLinkMapper, ShortLink
                 if (shortLinkDO == null) {
                     // ✅ 数据不存在，缓存空值
                     cacheNullValue(fullShortUrl);
-                    response.sendRedirect("/page/notfound");
+                    response.sendRedirect(ShortLinkConstant.PAGE_NOT_FOUND);
                 } else if (shortLinkDO.getValidDate() != null && 
                            shortLinkDO.getValidDate().before(new Date())) {
                     // 已过期
-                    response.sendRedirect("/page/expired");
+                    response.sendRedirect(ShortLinkConstant.PAGE_EXPIRED);
                 } else {
                     // 正常跳转
                     baseMapper.incrementClickNum(shortLinkDO.getGid(), fullShortUrl);
@@ -300,7 +301,7 @@ public class ShortLinkServiceImpl extends ServiceImpl<ShortLinkMapper, ShortLink
         } catch (InterruptedException e) {
             log.error("获取分布式锁被中断：{}", fullShortUrl, e);
             Thread.currentThread().interrupt();
-            response.sendRedirect("/page/error");
+            response.sendRedirect(ShortLinkConstant.PAGE_ERROR);
         }
     }
 
